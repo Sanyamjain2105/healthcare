@@ -17,7 +17,8 @@ const AuditLogSchema = new Schema({
   },
   userRole: { 
     type: String,
-    enum: ['patient', 'provider', 'admin', 'system']
+    enum: ['patient', 'provider', 'admin', 'system', null],
+    default: null
   },
   
   // What action was performed
