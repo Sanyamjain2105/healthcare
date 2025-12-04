@@ -9,6 +9,7 @@ router.use(authMiddleware);
 router.get('/me', requireRole('provider'), providerController.getProfile);
 router.get('/patients', requireRole('provider'), providerController.listAssignedPatients);
 router.get('/patients/:id', requireRole('provider'), providerController.viewPatientDetails);
+router.get('/patients/:id/wellness', requireRole('provider'), providerController.getPatientWellness);
 router.post('/patients/:id/compliance', requireRole('provider'), providerController.updateCompliance);
 
 module.exports = router;

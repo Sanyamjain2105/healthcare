@@ -1,5 +1,6 @@
 // src/controllers/auth.controller.js
 const AuthService = require('../services/auth.service');
+const { logAuthEvent, getClientIP } = require('../middlewares/audit.middleware');
 
 const respondError = (res, err) => {
   const status = err.status || 500;
@@ -11,9 +12,25 @@ module.exports = {
     // Function name: registerPatient
     try {
       const payload = req.body;
-      const result = await AuthService.createPatientAccount(payload);
+      const ipAddress = getClientIP(req);
+      const result = await AuthService.createPatientAccount(payload, ipAddress);
+      
+      // Log successful registration
+      await logAuthEvent('REGISTER', req, {
+        userId: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+        success: true
+      });
+      
       return res.status(201).json(result);
     } catch (err) {
+      // Log failed registration
+      await logAuthEvent('REGISTER', req, {
+        email: req.body?.email,
+        success: false,
+        errorMessage: err.message
+      });
       return respondError(res, err);
     }
   },
@@ -23,8 +40,23 @@ module.exports = {
     try {
       const { email, password } = req.body;
       const result = await AuthService.authenticate(email, password);
+      
+      // Log successful login
+      await logAuthEvent('LOGIN', req, {
+        userId: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+        success: true
+      });
+      
       return res.status(200).json(result);
     } catch (err) {
+      // Log failed login attempt
+      await logAuthEvent('LOGIN_FAILED', req, {
+        email: req.body?.email,
+        success: false,
+        errorMessage: err.message
+      });
       return respondError(res, err);
     }
   },

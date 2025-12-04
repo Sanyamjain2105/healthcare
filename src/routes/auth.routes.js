@@ -2,6 +2,10 @@
 const Router = require('express').Router;
 const router = Router();
 const authController = require('../controllers/auth.controller');
+const { authLimiter } = require('../middlewares/rateLimit.middleware');
+
+// Apply rate limiting to auth endpoints
+router.use(authLimiter);
 
 // Registration only for patients
 router.post('/register', authController.registerPatient);

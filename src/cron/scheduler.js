@@ -20,7 +20,7 @@ module.exports.startAll = () => {
     SchedulerService.weeklyProviderSummary().catch(console.error);
   }));
 
-  console.log('Cron jobs scheduled (stubs).');
+  console.log('Cron jobs scheduled.');
 };
 
 module.exports.stopAll = () => jobs.forEach(j => j.stop());

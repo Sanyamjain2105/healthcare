@@ -2,13 +2,14 @@
 const User = require('../models/user.model');
 const Patient = require('../models/patientProfile.model');
 const Provider = require('../models/provider.model');
+const Consent = require('../models/consent.model');
 const { hashPassword, comparePassword } = require('../utils/password.util');
 const jwtUtil = require('../utils/jwt.util');
 
 /**
  * AuthService
  *
- * - createPatientAccount(payload)
+ * - createPatientAccount(payload, ipAddress)
  * - authenticate(email, password)
  * - refreshAuth(oldRefreshToken)
  * - revokeTokens(userId, refreshToken?)  // if refreshToken omitted, revoke all
@@ -17,14 +18,22 @@ const jwtUtil = require('../utils/jwt.util');
 module.exports = {
   /**
    * Create a new patient account.
-   * - payload: { email, password, name?, age?, allergies?, medications? }
+   * - payload: { email, password, name?, age?, allergies?, medications?, consent? }
+   * - ipAddress: for consent logging
    * Returns: { user: { id, email, role }, accessToken, refreshToken }
    */
-  createPatientAccount: async (payload) => {
-    const { email, password, name, age, allergies = [], medications = [] } = payload;
+  createPatientAccount: async (payload, ipAddress = null) => {
+    const { email, password, name, age, allergies = [], medications = [], consent = true } = payload;
 
     if (!email || !password) {
       const err = new Error('Email and password required');
+      err.status = 400;
+      throw err;
+    }
+
+    // Require consent for registration
+    if (!consent) {
+      const err = new Error('You must accept the terms and privacy policy to register');
       err.status = 400;
       throw err;
     }
@@ -48,15 +57,20 @@ module.exports = {
       refreshTokens: []
     });
 
-    // Assign a provider (simple: provider with fewest patients)
+    // Assign a provider (provider with fewest patients - using aggregation)
     let assignedProviderId = null;
-    const provider = await Provider.findOne().sort({ 'patients.length': 1 }).exec();
-    if (!provider) {
-      // If no provider exists, leave null (seed providers recommended)
-      assignedProviderId = null;
-    } else {
-      // attach patient placeholder later after profile created
-      assignedProviderId = provider._id;
+    const providers = await Provider.aggregate([
+      {
+        $addFields: {
+          patientCount: { $size: { $ifNull: ["$patients", []] } }
+        }
+      },
+      { $sort: { patientCount: 1 } },
+      { $limit: 1 }
+    ]);
+    
+    if (providers.length > 0) {
+      assignedProviderId = providers[0]._id;
     }
 
     // Create patient profile
@@ -77,6 +91,9 @@ module.exports = {
         $push: { patients: patientProfile._id }
       });
     }
+
+    // Record consent for data processing
+    await Consent.recordRegistrationConsents(newUser._id, ipAddress);
 
     // Create tokens
     const accessToken = jwtUtil.signAccessToken({ _id: newUser._id, role: newUser.role, email: newUser.email });

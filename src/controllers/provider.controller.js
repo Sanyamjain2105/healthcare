@@ -201,5 +201,69 @@ module.exports = {
     } catch (err) {
       return respondError(res, err);
     }
+  },
+
+  /**
+   * GET /api/providers/patients/:id/wellness
+   * Get a patient's wellness history (for provider view)
+   */
+  getPatientWellness: async (req, res) => {
+    try {
+      const userId = userIdFromReq(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthenticated' });
+
+      const patientId = req.params.id;
+      if (!patientId) return res.status(400).json({ error: 'Patient id required' });
+
+      // Verify provider
+      const provider = await Provider.findOne({ user: userId });
+      if (!provider) return res.status(404).json({ error: 'Provider profile not found' });
+
+      // Ensure provider is assigned to this patient
+      const isAssigned = (provider.patients || []).some(pid => String(pid) === String(patientId));
+      if (!isAssigned) {
+        return res.status(403).json({ error: 'You are not assigned to this patient' });
+      }
+
+      // Get patient's wellness logs (last 7 days)
+      const WellnessLog = require('../models/wellnessLog.model');
+      const days = parseInt(req.query.days) || 7;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      startDate.setHours(0, 0, 0, 0);
+
+      const patient = await Patient.findById(patientId);
+      if (!patient) return res.status(404).json({ error: 'Patient not found' });
+
+      const logs = await WellnessLog.find({
+        patient: patientId,
+        date: { $gte: startDate }
+      }).sort({ date: -1 });
+
+      // Calculate summary
+      const summary = {
+        daysLogged: logs.length,
+        averageSteps: logs.length > 0 ? Math.round(logs.reduce((acc, l) => acc + (l.steps || 0), 0) / logs.length) : 0,
+        averageSleep: logs.length > 0 ? Math.round((logs.reduce((acc, l) => acc + (l.sleepHours || 0), 0) / logs.length) * 10) / 10 : 0,
+        averageWater: logs.length > 0 ? Math.round((logs.reduce((acc, l) => acc + (l.waterIntake || 0), 0) / logs.length) * 10) / 10 : 0,
+        averageActiveMinutes: logs.length > 0 ? Math.round(logs.reduce((acc, l) => acc + (l.activeMinutes || 0), 0) / logs.length) : 0
+      };
+
+      return res.status(200).json({
+        patient: { id: patient._id, name: patient.name },
+        summary,
+        logs: logs.map(l => ({
+          id: l._id,
+          date: l.date,
+          steps: l.steps,
+          sleepHours: l.sleepHours,
+          waterIntake: l.waterIntake,
+          activeMinutes: l.activeMinutes,
+          notes: l.notes
+        }))
+      });
+    } catch (err) {
+      return respondError(res, err);
+    }
   }
 };
